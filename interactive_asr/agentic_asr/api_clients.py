@@ -7,7 +7,7 @@ import re
 import os
 import requests
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # ==================== ASR 配置 ====================
 # Whisper/Ray ASR (当前使用)
@@ -473,6 +473,75 @@ def call_judge_with_consensus(
             logging.warning(f"call_judge_with_consensus 第 {round_idx + 1} 轮失败: {e}")
 
     return true_count > threshold
+
+
+def call_judge_with_trace(
+    text1: str,
+    text2: str,
+    system_prompt: str,
+    k: int = 3,
+    model: Optional[str] = None,
+    timeout: int = 30,
+    enable_thinking: bool = False,
+) -> Dict:
+    """
+    Judge semantic equivalence with per-round tracing.
+
+    Returns:
+        A dictionary with round-level outcomes and the final consensus decision.
+    """
+    if k < 1:
+        raise ValueError(f"call_judge_with_trace: k must be >= 1, got {k}")
+
+    if model is None:
+        model = LLM_JUDGE_MODEL_NAME
+
+    threshold = k // 2 + 1
+    true_count = 0
+    rounds = []
+
+    for round_idx in range(k):
+        round_trace = {
+            "round": round_idx + 1,
+            "forward": None,
+            "backward": None,
+            "round_consensus": False,
+            "error": None,
+        }
+        try:
+            forward = call_judge(
+                text1,
+                text2,
+                system_prompt=system_prompt,
+                model=model,
+                timeout=timeout,
+                enable_thinking=enable_thinking,
+            )
+            backward = call_judge(
+                text2,
+                text1,
+                system_prompt=system_prompt,
+                model=model,
+                timeout=timeout,
+                enable_thinking=enable_thinking,
+            )
+            round_trace["forward"] = forward
+            round_trace["backward"] = backward
+            round_trace["round_consensus"] = bool(forward and backward)
+            if round_trace["round_consensus"]:
+                true_count += 1
+        except Exception as e:
+            round_trace["error"] = str(e)
+        rounds.append(round_trace)
+
+    return {
+        "k": k,
+        "threshold": threshold,
+        "true_count": true_count,
+        "semantic_equivalent": true_count >= threshold,
+        "rounds": rounds,
+        "model": model,
+    }
 
 
 # ==================== LLM 响应容错检测 ====================

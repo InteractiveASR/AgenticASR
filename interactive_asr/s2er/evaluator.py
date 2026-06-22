@@ -9,8 +9,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from interactive_asr.agentic_asr.api_clients import call_judge_with_consensus
+from interactive_asr.agentic_asr.api_clients import call_judge_with_consensus, call_judge_with_trace
 from interactive_asr.agentic_asr.norm import norm
+from .common import get_current_prediction
+from .metrics import compute_s2er
 
 logger = logging.getLogger(__name__)
 
@@ -31,17 +33,6 @@ def get_judge_prompt(prompts_path: Optional[str] = None) -> str:
         raise KeyError("default_prompts.json is missing judge.system_prompt")
     return prompts["judge"]["system_prompt"]
 
-
-def get_current_prediction(item: Dict) -> Optional[str]:
-    loop_keys = [k for k in item.keys() if k.startswith("loop_") and k.endswith("_pred")]
-    if loop_keys:
-        sorted_keys = sorted(loop_keys, key=lambda x: int(x.split("_")[1]))
-        return item[sorted_keys[-1]]
-    if "raw_pred" in item:
-        return item["raw_pred"]
-    return None
-
-
 def calculate_is_correct(pred: str, gt: str) -> bool:
     return norm(pred) == norm(gt)
 
@@ -51,6 +42,7 @@ def evaluate_item(
     use_semantic_judge: bool = True,
     judge_prompt: Optional[str] = None,
     judge_k_rounds: int = 3,
+    save_judge_trace: bool = False,
 ) -> Dict:
     pred = get_current_prediction(item)
     if pred is None:
@@ -67,20 +59,58 @@ def evaluate_item(
 
     if is_correct:
         result["is_semantic_correct"] = True
+        if save_judge_trace:
+            result["s2er_judge_trace"] = {
+                "k": 0,
+                "threshold": 0,
+                "true_count": 0,
+                "semantic_equivalent": True,
+                "rounds": [],
+                "shortcut": "exact_match",
+            }
     elif item.get("is_semantic_correct", False):
         result["is_semantic_correct"] = True
+        if save_judge_trace:
+            result["s2er_judge_trace"] = {
+                "k": 0,
+                "threshold": 0,
+                "true_count": 0,
+                "semantic_equivalent": True,
+                "rounds": [],
+                "shortcut": "precomputed_semantic_correct",
+            }
     elif use_semantic_judge:
         try:
-            result["is_semantic_correct"] = call_judge_with_consensus(
-                pred,
-                gt,
-                system_prompt=judge_prompt,
-                k=judge_k_rounds,
-                timeout=30,
-            )
+            if save_judge_trace:
+                trace = call_judge_with_trace(
+                    pred,
+                    gt,
+                    system_prompt=judge_prompt,
+                    k=judge_k_rounds,
+                    timeout=30,
+                )
+                result["s2er_judge_trace"] = trace
+                result["is_semantic_correct"] = trace["semantic_equivalent"]
+            else:
+                result["is_semantic_correct"] = call_judge_with_consensus(
+                    pred,
+                    gt,
+                    system_prompt=judge_prompt,
+                    k=judge_k_rounds,
+                    timeout=30,
+                )
         except Exception as exc:
             logger.warning("Semantic judge failed for ID=%s: %s", item.get("id"), exc)
             result["is_semantic_correct"] = False
+            if save_judge_trace:
+                result["s2er_judge_trace"] = {
+                    "k": judge_k_rounds,
+                    "threshold": judge_k_rounds // 2 + 1,
+                    "true_count": 0,
+                    "semantic_equivalent": False,
+                    "rounds": [],
+                    "error": str(exc),
+                }
 
     if "total_loop" not in result:
         result["total_loop"] = 0
@@ -94,13 +124,21 @@ def evaluate_items_concurrent(
     judge_prompt: Optional[str] = None,
     judge_k_rounds: int = 3,
     concurrency: int = 256,
+    save_judge_trace: bool = False,
 ) -> List[Dict]:
     print(f"Concurrent evaluation (workers={concurrency})...")
     results: List[Optional[Dict]] = [None] * len(items)
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         future_to_index = {
-            executor.submit(evaluate_item, item, use_semantic_judge, judge_prompt, judge_k_rounds): i
+            executor.submit(
+                evaluate_item,
+                item,
+                use_semantic_judge,
+                judge_prompt,
+                judge_k_rounds,
+                save_judge_trace,
+            ): i
             for i, item in enumerate(items)
         }
         for future in as_completed(future_to_index):
@@ -119,10 +157,11 @@ def evaluate_items_serial(
     use_semantic_judge: bool = True,
     judge_prompt: Optional[str] = None,
     judge_k_rounds: int = 3,
+    save_judge_trace: bool = False,
 ) -> List[Dict]:
     results = []
     for item in items:
-        results.append(evaluate_item(item, use_semantic_judge, judge_prompt, judge_k_rounds))
+        results.append(evaluate_item(item, use_semantic_judge, judge_prompt, judge_k_rounds, save_judge_trace))
     return results
 
 
@@ -139,12 +178,15 @@ def calculate_metrics(results: List[Dict]) -> Dict:
             "semantic_judged": 0,
             "semantic_correct": 0,
             "semantic_correct_rate": 0.0,
+            "s2er": 0.0,
         }
 
     is_correct_count = sum(1 for r in valid_results if r.get("is_correct", False))
     semantic_results = [r for r in valid_results if "is_semantic_correct" in r]
     semantic_judged = len(semantic_results)
     semantic_correct = sum(1 for r in semantic_results if r.get("is_semantic_correct"))
+
+    s2er_metrics = compute_s2er(valid_results)
 
     return {
         "total": total,
@@ -154,6 +196,7 @@ def calculate_metrics(results: List[Dict]) -> Dict:
         "semantic_judged": semantic_judged,
         "semantic_correct": semantic_correct,
         "semantic_correct_rate": semantic_correct / semantic_judged * 100 if semantic_judged > 0 else 0.0,
+        "s2er": s2er_metrics["s2er_rate"],
     }
 
 
@@ -167,4 +210,5 @@ def print_report(results: List[Dict], metrics: Dict):
     print(f"SER: {metrics['ser']:.2f}%")
     if metrics["semantic_judged"] > 0:
         print(f"Semantic correctness rate: {metrics['semantic_correct_rate']:.2f}%")
+        print(f"S²ER: {metrics['s2er']:.2f}%")
     print("=" * 80)
