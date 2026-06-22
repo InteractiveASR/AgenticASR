@@ -27,52 +27,19 @@ This repository consolidates the core executable components behind our Interacti
 
 We formulate ASR as a multi-turn refinement problem rather than a single-shot transcription task. To support this setting, we introduce **Agentic ASR**, a closed-loop framework that combines base ASR decoding, user-like spoken correction, and reasoning-based transcript editing. We further introduce **S²ER**, a sentence-level semantic evaluation metric designed to capture meaning-critical ASR errors that token-level metrics often miss, and an **Interactive Simulation Framework** for scalable and reproducible benchmarking. Together, these components provide an executable research stack for studying interactive speech recognition under multilingual, named-entity-intensive, and code-switching conditions.
 
-## What Is Included
+## Components
 
-This repository is organized around the three research contributions.
+The repository is organized around three tightly coupled parts:
 
-### Agentic ASR
+- `Agentic ASR`: the correction loop with `HumanAgent`, `ASRAgent`, and service clients
+- `S²ER`: semantic evaluation on top of exact-match normalization and LLM-based judging
+- `Interactive Simulation Framework`: stage-0 decoding, iterative correction, and JSONL-based experiment orchestration
 
-Implements the correction loop:
+For implementation details, see:
 
-- `HumanAgent`: generates natural spoken corrections from `GT` and the current ASR hypothesis
-- `ASRAgent`: decides whether the correction confirms or edits the displayed transcript
-- service clients for ASR, TTS, and LLM backends
-
-Core code:
-
-- [interactive_asr/agentic_asr/human_agent.py](/Users/zixuan/X-LANCE/AgenticASR/interactive_asr/agentic_asr/human_agent.py:1)
-- [interactive_asr/agentic_asr/asr_agent.py](/Users/zixuan/X-LANCE/AgenticASR/interactive_asr/agentic_asr/asr_agent.py:1)
-- [interactive_asr/agentic_asr/api_clients.py](/Users/zixuan/X-LANCE/AgenticASR/interactive_asr/agentic_asr/api_clients.py:1)
-
-### S²ER
-
-Implements semantic evaluation:
-
-- exact-match evaluation after normalization
-- LLM-based semantic equivalence judging
-- multi-round consensus to improve judge stability
-
-Core code:
-
-- [interactive_asr/s2er/evaluator.py](/Users/zixuan/X-LANCE/AgenticASR/interactive_asr/s2er/evaluator.py:1)
-- [evaluate.py](/Users/zixuan/X-LANCE/AgenticASR/evaluate.py:1)
-
-### Interactive Simulation Framework
-
-Implements the experiment pipeline:
-
-- stage-0 decoding over JSONL datasets
-- turn-by-turn correction scheduling
-- append-only JSONL outputs with interaction traces
-- reusable CLI scripts for iterative experiments
-
-Core code:
-
-- [interactive_asr/simulation/stage0.py](/Users/zixuan/X-LANCE/AgenticASR/interactive_asr/simulation/stage0.py:1)
-- [interactive_asr/simulation/loop.py](/Users/zixuan/X-LANCE/AgenticASR/interactive_asr/simulation/loop.py:1)
-- [scripts/run_stage0_asr.py](/Users/zixuan/X-LANCE/AgenticASR/scripts/run_stage0_asr.py:1)
-- [scripts/run_next_loop.py](/Users/zixuan/X-LANCE/AgenticASR/scripts/run_next_loop.py:1)
+- [docs/agentic_asr.md](/Users/zixuan/X-LANCE/AgenticASR/docs/agentic_asr.md:1)
+- [docs/s2er.md](/Users/zixuan/X-LANCE/AgenticASR/docs/s2er.md:1)
+- [docs/interactive_simulation_framework.md](/Users/zixuan/X-LANCE/AgenticASR/docs/interactive_simulation_framework.md:1)
 
 ## Repository Structure
 
@@ -124,6 +91,8 @@ The public pipeline expects an OpenAI-compatible transcription endpoint:
 POST /v1/audio/transcriptions
 ```
 
+In our experiments, the base ASR model is **Qwen3ASR-1.7B**.
+
 The current client supports two ASR deployment styles:
 
 - OpenAI-compatible transcription endpoint, such as a Whisper-style or vLLM-backed ASR server
@@ -133,7 +102,7 @@ Recommended environment variables:
 
 ```bash
 export ASR_URL="http://0.0.0.0:18080/v1/audio/transcriptions"
-export ASR_MODEL="qwen3asr"
+export ASR_MODEL="Qwen3ASR-1.7B"
 ```
 
 If you are using a FireRedASR-style deployment, a typical launch looks like:
@@ -179,7 +148,12 @@ Recommended environment variable:
 export TTS_URL="http://0.0.0.0:6006/tts_url"
 ```
 
-In our internal experiments, we used an `IndexTTS-1.5` style service on port `6006`.
+In our experiments, we use **index-tts-vllm**:
+
+- repository: `https://github.com/Ksuriuri/index-tts-vllm`
+- service endpoint: `http://0.0.0.0:6006/tts_url`
+
+Please follow the upstream repository to deploy the TTS service, then point this repository to the exported endpoint with `TTS_URL`.
 
 ### 3. LLM services
 
@@ -216,6 +190,7 @@ After all external services are running, a minimal local configuration looks lik
 ```bash
 export ASR_URL="http://0.0.0.0:18080/v1/audio/transcriptions"
 export TTS_URL="http://0.0.0.0:6006/tts_url"
+export ASR_MODEL="Qwen3ASR-1.7B"
 
 export LLM_HUMAN_BASE_URL="http://0.0.0.0:6790/v1"
 export LLM_ASR_BASE_URL="http://0.0.0.0:6790/v1"
