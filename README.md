@@ -1,5 +1,7 @@
 # Interactive ASR
 
+[中文说明](README_zh.md)
+
 [Project Page](https://interactiveasr.github.io/) | [GitHub](https://github.com/InteractiveASR/AgenticASR) | [Paper 1](https://arxiv.org/abs/2604.09121) | [Paper 2](https://arxiv.org/abs/2605.29430)
 
 Official research repository for the **Interactive ASR** project family, including the public artifact for:
