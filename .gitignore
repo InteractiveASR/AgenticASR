@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+logs/
+temp_audio/
+*.wav.tmp
+*.pdf
+*.png
+*.log
+!docs/assets/*.png
