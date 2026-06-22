@@ -43,16 +43,9 @@ For implementation details, see:
 - [docs/s2er.md](/Users/zixuan/X-LANCE/AgenticASR/docs/s2er.md:1)
 - [docs/interactive_simulation_framework.md](/Users/zixuan/X-LANCE/AgenticASR/docs/interactive_simulation_framework.md:1)
 
-### Agentic ASR
-
 <p align="center">
-  <img src="docs/assets/interactive-framework.png" alt="Agentic ASR framework" width="72%">
-</p>
-
-### Interactive Simulation Framework
-
-<p align="center">
-  <img src="docs/assets/iss-framework.png" alt="Interactive Simulation System framework" width="72%">
+  <img src="docs/assets/interactive-framework.png" alt="Agentic ASR framework" width="40%">
+  <img src="docs/assets/iss-framework.png" alt="Interactive Simulation System framework" width="40%">
 </p>
 
 ## Repository Structure
