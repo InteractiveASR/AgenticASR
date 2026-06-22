@@ -14,6 +14,7 @@ from interactive_asr.s2er.evaluator import (
     load_prompts_from_file,
     print_report,
 )
+from interactive_asr.s2er.metrics import compute_loopwise_s2er
 from interactive_asr.simulation.io import load_jsonl, save_jsonl
 
 
@@ -53,6 +54,7 @@ def main():
     parser.add_argument("--concurrency", type=int, default=256, help="并发数（默认256）")
     parser.add_argument("--prompts", type=str, default="config/default_prompts.json", help="default_prompts.json 文件路径（默认 config/default_prompts.json）")
     parser.add_argument("--judge-k-rounds", type=int, default=3, help="语义判断轮数（默认3）")
+    parser.add_argument("--save-judge-trace", action="store_true", help="Save round-level semantic judge traces")
 
     args = parser.parse_args()
 
@@ -93,15 +95,33 @@ def main():
             return 1
 
     if args.concurrency > 1:
-        evaluated_results = evaluate_items_concurrent(results, use_semantic_judge, judge_prompt, args.judge_k_rounds, args.concurrency)
+        evaluated_results = evaluate_items_concurrent(
+            results,
+            use_semantic_judge,
+            judge_prompt,
+            args.judge_k_rounds,
+            args.concurrency,
+            args.save_judge_trace,
+        )
     else:
-        evaluated_results = evaluate_items_serial(results, use_semantic_judge, judge_prompt, args.judge_k_rounds)
+        evaluated_results = evaluate_items_serial(
+            results,
+            use_semantic_judge,
+            judge_prompt,
+            args.judge_k_rounds,
+            args.save_judge_trace,
+        )
 
     # 计算指标
     metrics = calculate_metrics(evaluated_results)
 
     # 打印报告
     print_report(evaluated_results, metrics)
+    loopwise = compute_loopwise_s2er(evaluated_results)
+    if loopwise:
+        print("\nLoop-wise S²ER")
+        for row in loopwise:
+            print(f"  loop={row['loop']}: S²ER={row['s2er_rate']:.2f}%  SER={row['ser_rate']:.2f}%")
 
     # 保存结果（如果不是 report-only）
     if not args.report_only:
