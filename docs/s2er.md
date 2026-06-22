@@ -48,7 +48,6 @@ The public implementation now also supports:
 - explicit `S²ER` computation at dataset level
 - loop-wise `S²ER` reporting
 - optional round-level judge traces through `--save-judge-trace`
-- human-vs-judge agreement analysis
 
 ## Current Public Implementation
 
@@ -59,6 +58,5 @@ The public artifact exposes:
 - bidirectional multi-round consensus through `call_judge_with_consensus`
 - traced judge execution through `call_judge_with_trace`
 - dataset-level metric utilities in `interactive_asr/s2er/metrics.py`
-- human alignment utilities in `interactive_asr/s2er/human_alignment.py`
 
 This repository therefore includes the executable evaluation layer that operationalizes the semantic metric used in the project.
