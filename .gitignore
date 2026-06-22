@@ -9,3 +9,4 @@ temp_audio/
 *.pdf
 *.png
 *.log
+!docs/assets/*.png

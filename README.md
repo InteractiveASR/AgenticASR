@@ -12,24 +12,16 @@ Official research repository for the **Interactive ASR** project family, includi
 
 Automatic speech recognition is typically treated as a one-pass transcription problem. This setup is misaligned with real human interaction, where recognition failures are often repaired through clarification, confirmation, and correction. Interactive ASR studies this missing loop directly.
 
+<p align="center">
+  <img src="docs/assets/teaser-1.png" alt="Interactive ASR overview" width="100%">
+</p>
+
 This repository consolidates the core executable components behind our Interactive ASR papers:
 
 1. a user-side correction agent that produces human-like spoken feedback
 2. an ASR-side refinement agent that edits the displayed hypothesis
 3. a semantic evaluation layer that goes beyond token overlap
 4. a simulation framework that scales the full interaction loop to benchmark settings
-
-## Papers
-
-### 1. Interactive ASR: Towards Human-Like Interaction and Semantic Coherence Evaluation for Agentic Speech Recognition
-
-**Peng Wang\***, **Yanqiao Zhu\***, **Zixuan Jiang\***, Qinyuan Chen, Xingjian Zhao, Xipeng Qiu, Wupeng Wang, Zhifu Gao, Xiangang Li, Kai Yu, **Xie Chen†**
-
-### 2. Towards Human-Like Interactive Speech Recognition With Agentic Correction and Semantic Evaluation
-
-**Zixuan Jiang\***, **Yanqiao Zhu\***, **Peng Wang\***, Qinyuan Chen, Xinjian Zhao, Xipeng Qiu, Wupeng Wang, Zhifu Gao, Xiangang Li, Kai Yu, **Xie Chen†**
-
-\* Equal contribution. † Corresponding author.
 
 ## Abstract
 
@@ -110,7 +102,9 @@ evaluate.py                     # S²ER evaluation entrypoint
 ### Environment
 
 - Python `>= 3.10`
-- running external ASR, TTS, and LLM services
+- one running ASR service
+- one running TTS service
+- one or more OpenAI-compatible LLM endpoints for `HumanAgent`, `ASRAgent`, and `Judge`
 
 ### Install dependencies
 
@@ -118,9 +112,106 @@ evaluate.py                     # S²ER evaluation entrypoint
 pip install -r requirements.txt
 ```
 
-### Configure service endpoints
+## Service Setup
 
-This repository is an orchestration and evaluation artifact. It does **not** include model training code or serving stacks.
+This repository is the orchestration and evaluation layer. It does **not** include model training code or full serving stacks. Before running the pipeline, you must start external ASR, TTS, and LLM services and then point this repository to those endpoints.
+
+### 1. ASR service
+
+The public pipeline expects an OpenAI-compatible transcription endpoint:
+
+```text
+POST /v1/audio/transcriptions
+```
+
+The current client supports two ASR deployment styles:
+
+- OpenAI-compatible transcription endpoint, such as a Whisper-style or vLLM-backed ASR server
+- OpenAI-compatible chat completion endpoint for ASR models that return tagged text
+
+Recommended environment variables:
+
+```bash
+export ASR_URL="http://0.0.0.0:18080/v1/audio/transcriptions"
+export ASR_MODEL="qwen3asr"
+```
+
+If you are using a FireRedASR-style deployment, a typical launch looks like:
+
+```bash
+cd $FIRERED_ASR_DIR
+export CUDA_VISIBLE_DEVICES=4,5
+MODEL_PATH="$FIRERED_MODEL"
+vllm serve "$MODEL_PATH" \
+  -tp 2 \
+  --dtype float32 \
+  --gpu-memory-utilization 0.95 \
+  --host 0.0.0.0 \
+  --port 7880
+```
+
+Then point the repository to that endpoint:
+
+```bash
+export ASR_URL="http://0.0.0.0:7880/v1/audio/transcriptions"
+```
+
+### 2. TTS service
+
+The TTS side is expected to expose a JSON HTTP endpoint compatible with the client in [interactive_asr/agentic_asr/api_clients.py](/Users/zixuan/X-LANCE/AgenticASR/interactive_asr/agentic_asr/api_clients.py:1):
+
+```text
+POST /tts_url
+```
+
+Expected request shape:
+
+```json
+{
+  "text": "correction utterance",
+  "audio_paths": ["/absolute/path/to/reference.wav"]
+}
+```
+
+Recommended environment variable:
+
+```bash
+export TTS_URL="http://0.0.0.0:6006/tts_url"
+```
+
+In our internal experiments, we used an `IndexTTS-1.5` style service on port `6006`.
+
+### 3. LLM services
+
+The repository uses OpenAI-compatible chat completion APIs for three logical roles:
+
+- `HumanAgent`: generates natural correction utterances
+- `ASRAgent`: edits the current ASR hypothesis
+- `Judge`: evaluates semantic equivalence for S²ER
+
+You can run all three roles on one endpoint or split them across different endpoints.
+
+Recommended environment variables:
+
+```bash
+export LLM_HUMAN_BASE_URL="http://0.0.0.0:6790/v1"
+export LLM_ASR_BASE_URL="http://0.0.0.0:6790/v1"
+export LLM_JUDGE_BASE_URL="http://0.0.0.0:6789/v1"
+
+export LLM_HUMAN_MODEL="qwen3.5-27b"
+export LLM_ASR_MODEL="qwen3.5-27b"
+export LLM_JUDGE_MODEL="Gemma4-31B-it"
+```
+
+If your endpoint requires an API key:
+
+```bash
+export OPENAI_API_KEY="your-key"
+```
+
+### 4. Full environment summary
+
+After all external services are running, a minimal local configuration looks like:
 
 ```bash
 export ASR_URL="http://0.0.0.0:18080/v1/audio/transcriptions"
@@ -132,7 +223,7 @@ export LLM_JUDGE_BASE_URL="http://0.0.0.0:6789/v1"
 
 export LLM_HUMAN_MODEL="qwen3.5-27b"
 export LLM_ASR_MODEL="qwen3.5-27b"
-export LLM_JUDGE_MODEL="qwen3-32b"
+export LLM_JUDGE_MODEL="Gemma4-31B-it"
 ```
 
 ## Quick Start
